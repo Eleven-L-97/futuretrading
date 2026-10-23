@@ -14,7 +14,7 @@ from datetime import datetime
 import pandas as pd
 
 import config as cfg
-from feishu import as_text, day_to_ms, ms_to_str
+from feishu import as_text, day_to_ms, ms_to_str, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +30,18 @@ def table_for(name):
     return None
 
 
-def history_due(now=None):
-    """是否到了历史写入时点（每 15 分钟一次，容忍 cron 延迟）。"""
-    now = now or datetime.now()
-    return now.minute % cfg.HISTORY_INTERVAL_MIN < 5
+def history_due(ts_ms=None):
+    """距上一次写入是否已满 HISTORY_INTERVAL_MIN 分钟。
+
+    以 CSV 里最后一条记录为准，而不是看"当前分钟数"——GitHub 的 cron 经常延迟
+    5–15 分钟，按分钟对齐会漏掉窗口。第一次运行为空时直接写。
+    """
+    ts_ms = ts_ms or now_ms()
+    last = last_written_ms("history") or last_written_ms("history2")
+    if last is None:
+        return True
+    interval_ms = max(int(cfg.HISTORY_INTERVAL_MIN), 1) * 60 * 1000
+    return (ts_ms - last) >= interval_ms - 60 * 1000     # 留 1 分钟容差
 
 
 def csv_path(table_name):

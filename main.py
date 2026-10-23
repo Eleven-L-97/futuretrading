@@ -89,7 +89,7 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
     updates, ok, fail = [], 0, 0
     buckets = {t: [] for t in cfg.HISTORY_SPLIT}
 
-    due = force_history or (history_mod.history_due() and not history_mod.already_written(ts_now))
+    due = force_history or history_mod.history_due(ts_now)
     if due and not dry_run:
         history_mod.clear_previous_weeks(fs)
 
