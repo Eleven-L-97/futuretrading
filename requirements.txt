@@ -1,0 +1,7 @@
+# 运行依赖（GitHub Actions 与本机一致）
+# akshare 版本固定，避免上游接口变动导致行情列名变化
+akshare==1.19.1
+pandas>=2.2
+numpy>=1.26
+requests>=2.31
+plotly>=5.20

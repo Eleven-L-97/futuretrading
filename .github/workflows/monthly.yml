@@ -1,0 +1,39 @@
+name: 绩效指标
+
+# 月末最后一天 18:20（北京时间）计算月/季/年绩效。
+# 28-31 每天都触发一次，脚本内部判断「今天是否月末」，不是月末会自动跳过。
+on:
+  schedule:
+    - cron: '20 10 28-31 * *'   # UTC 10:20 = 北京 18:20
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monthly
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Shanghai
+      FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+      FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+      FEISHU_APP_TOKEN: ${{ secrets.FEISHU_APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 计算绩效
+        run: python main.py --mode monthly
