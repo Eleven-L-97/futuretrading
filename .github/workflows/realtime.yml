@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '*/5 1-3,5-7,13-15 * * 1-5'
   workflow_dispatch:
+    inputs:
+      force_history:
+        description: '忽略 15 分钟节流，立即写一次历史与 CSV（测试用）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write        # 需要把 data/*.csv 提交回仓库
@@ -39,7 +44,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: 运行实时盯盘
-        run: python main.py --mode realtime
+        run: python main.py --mode realtime ${{ inputs.force_history && '--force-history' || '' }}
 
       - name: 提交历史 CSV
         run: |
