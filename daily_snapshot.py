@@ -215,6 +215,9 @@ def _compute(fs, day, dry_run=False, is_today=False):
         tick_equity = cfg.INITIAL_EQUITY + realized + float_pnl - total_fee
 
     # ---------- B. 盯市路径 ----------
+    # 把当天的持仓拆成四块，各自从自己的成本基准起算：
+    #   昨仓留存、昨仓平掉（基准=昨结算）；今开留存、今开平掉（基准=今开仓价）
+    # 这样「平仓量 > 昨仓量」（当天先加仓再减仓）时不会重复计算。
     qty_y = replay(rows, until=prev_day) if prev_day is not None else {}
     flows = today_flows(rows, day)
     mtm_pnl = 0.0
@@ -225,21 +228,35 @@ def _compute(fs, day, dry_run=False, is_today=False):
         mrow = monitors.get(name) or {}
         mult = as_num(mrow.get(M["multiplier"]), 1) or 1
         settle = settle_today.get(name)
-        qty_now = holdings.get(key, {}).get("qty", 0.0)
+
+        q0 = (qty_y.get(key) or {}).get("qty", 0.0)
+        q1 = holdings.get(key, {}).get("qty", 0.0)
         flow = flows.get(key) or {"add_qty": 0.0, "add_px": 0.0, "close_qty": 0.0, "close_px": 0.0}
-        had_before = (qty_y.get(key) or {}).get("qty", 0.0) > EPS
-        base = prev_settle_map.get(name) if had_before else flow["add_px"]
-        if base is None:
-            base = settle if settle is not None else flow["add_px"]
-        if qty_now > 0:
-            if settle is None:
-                logger.warning(f"{name} 缺少今结算价，盯市路径跳过该品种")
-                continue
-            mtm_pnl += qty_now * (settle - base) * mult * sign
-        if had_before and flow["add_qty"] > EPS and settle is not None:
-            mtm_pnl += flow["add_qty"] * (settle - flow["add_px"]) * mult * sign
-        if flow["close_qty"] > EPS:
-            mtm_pnl += flow["close_qty"] * (flow["close_px"] - base) * mult * sign
+        add_qty, add_px = flow["add_qty"], flow["add_px"]
+        close_qty, close_px = flow["close_qty"], flow["close_px"]
+        if q1 > EPS and settle is None:
+            logger.warning(f"{name} 缺少今结算价，盯市路径跳过该品种")
+            continue
+
+        old_closed = min(close_qty, q0)
+        old_remain = max(q0 - old_closed, 0.0)
+        new_closed = max(close_qty - q0, 0.0)
+        new_remain = max(q1 - old_remain, 0.0)
+
+        # 昨仓：基准 = 昨结算
+        if old_remain > EPS or old_closed > EPS:
+            base = prev_settle_map.get(name)
+            if base is None:
+                base = settle if settle is not None else add_px
+            if old_remain > EPS and settle is not None:
+                mtm_pnl += old_remain * (settle - base) * mult * sign
+            if old_closed > EPS:
+                mtm_pnl += old_closed * (close_px - base) * mult * sign
+        # 今仓：基准 = 今开仓均价
+        if new_remain > EPS and settle is not None:
+            mtm_pnl += new_remain * (settle - add_px) * mult * sign
+        if new_closed > EPS:
+            mtm_pnl += new_closed * (close_px - add_px) * mult * sign
 
     if prev_day is None:
         logger.warning("首次快照（无历史快照）：盯市路径以逐笔路径为基准，「当日盈亏」记 0")

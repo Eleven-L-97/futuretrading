@@ -231,17 +231,54 @@ class TestSnapshot(unittest.TestCase):
         self.assertAlmostEqual(row[cfg.SNAP_FIELDS["margin"]], 4436.0, places=2)
 
     def test_missing_settle_aborts(self):
-        df = make_daily([2100, 2190], start="2026-10-20")  # 没有今天
+        """有日线但当日结算价未出：只写占位行，不计算。"""
+        df = make_daily([2100, 2190, 2218], start="2026-10-20")
+        df.loc[df.index[-1], "settle"] = float("nan")   # 今天有日线，但结算价还没出
         self._patch_daily(df)
         fs = FakeFS({
             "monitor": self._monitor(),
-            "journal": [],
-            "position": [{cfg.POS_FIELDS["name"]: "玉米", cfg.POS_FIELDS["direction"]: "多",
-                          cfg.POS_FIELDS["qty"]: 2, cfg.POS_FIELDS["avg_px"]: 2200, "_id": "p1"}],
+            "journal": [{cfg.JOURNAL_FIELDS["date"]: ms("2026-10-21"),
+                         cfg.JOURNAL_FIELDS["name"]: "玉米",
+                         cfg.JOURNAL_FIELDS["direction"]: "多",
+                         cfg.JOURNAL_FIELDS["tactic"]: "开仓",
+                         cfg.JOURNAL_FIELDS["open_px"]: 2200,
+                         cfg.JOURNAL_FIELDS["open_qty"]: 2,
+                         "_id": "j1"}],
+            "position": [],
             "snapshot": [],
         })
         self.assertIsNone(daily_snapshot.run(fs, today=pd.Timestamp("2026-10-22")))
-        self.assertEqual(fs.read("snapshot"), [])
+        snaps = fs.read("snapshot")
+        self.assertEqual(len(snaps), 1)
+        self.assertIsNone(snaps[0].get(cfg.SNAP_FIELDS["equity"]))
+
+    def test_close_exceeding_yesterday_qty(self):
+        """当天先加仓再平掉（平仓量 > 昨仓）时，盯市不能重复计算。"""
+        F = cfg.JOURNAL_FIELDS
+        # 10-22 结算 3225，10-23 结算 3270
+        df = make_daily([3200, 3225, 3270], start="2026-10-21")
+        self._patch_daily(df)
+        fs = FakeFS({
+            "monitor": [{cfg.MONITOR_FIELDS["name"]: "玉米", cfg.MONITOR_FIELDS["code"]: "C0",
+                         cfg.MONITOR_FIELDS["multiplier"]: 10, cfg.MONITOR_FIELDS["margin_rate"]: 0.1,
+                         "_id": "m1"}],
+            "journal": [
+                {F["date"]: ms("2026-10-22"), F["name"]: "玉米", F["direction"]: "空",
+                 F["tactic"]: "开仓", F["open_px"]: 3220, F["open_qty"]: 2, F["open_fee"]: 7.084, "_id": "j1"},
+                {F["date"]: ms("2026-10-23"), F["name"]: "玉米", F["direction"]: "空",
+                 F["tactic"]: "加仓", F["open_px"]: 3250, F["open_qty"]: 2, F["open_fee"]: 7.15, "_id": "j2"},
+                {F["date"]: ms("2026-10-23"), F["name"]: "玉米", F["direction"]: "空",
+                 F["tactic"]: "出场", F["close_px"]: 3210, F["close_qty"]: 3, F["close_fee"]: 10.59, "_id": "j3"},
+            ],
+            "position": [],
+            # 10-22 的正确权益：20000 + (3225-3220)*2*10*(-1) - 7.084
+            "snapshot": [{cfg.SNAP_FIELDS["date"]: ms("2026-10-22"),
+                          cfg.SNAP_FIELDS["equity"]: 19892.92, "_id": "s1"}],
+        })
+        row = daily_snapshot.run(fs, today=pd.Timestamp("2026-10-23"))
+        self.assertIsNotNone(row)
+        self.assertAlmostEqual(row[cfg.SNAP_FIELDS["tick_equity"]], row[cfg.SNAP_FIELDS["mtm_equity"]], places=2)
+        self.assertEqual(row[cfg.SNAP_FIELDS["ok"]], "是")
 
     def test_close_row_without_close_px_aborts(self):
         df = make_daily([2100, 2190, 2218], start="2026-10-20")

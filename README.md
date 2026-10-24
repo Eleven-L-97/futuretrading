@@ -188,14 +188,17 @@ FEISHU_APP_TOKEN=RDX2bwQhfaYeRhsZAwUcW6VYned
 - 多：`(平仓价 − 开仓均价) × 合约乘数 × 平仓数量 − 开仓手续费 − 平仓手续费`
 - 空：`(开仓均价 − 平仓价) × 合约乘数 × 平仓数量 − 开仓手续费 − 平仓手续费`
 
-开仓均价 = **上一条平仓记录之后、本条平仓之前**的所有开仓行加权平均价；开仓手续费按平仓数量占比分摊。
+开仓均价 = **持仓池的加权平均成本**（与持仓管理表的开仓均价完全一致）；开仓手续费按平仓数量占池中数量的比例分摊。
+
+> 早期版本按「上一条平仓之后的开仓行」算均价，当一次平仓的数量大于这段时间新开的数量时（用到更早批次的老仓），会把盈亏算高。现已改为持仓池加权平均。
 
 ### 双路径校验
 
-- 逐笔：`初始资金 + 已实现盈亏 + 浮动盈亏`
+- 逐笔：`初始资金 + 已实现盈亏（毛） + 浮动盈亏 − 全部手续费`
 - 盯市：`前一日权益 + 当日盯市盈亏 − 当日手续费`
 
-当日盯市盈亏按「昨仓 / 今开 / 今平」拆分；差额 ≤ 0.1 元记「是」。
+当日盯市盈亏拆成四块：**昨仓留存 / 昨仓平掉**（基准=昨结算）、**今开留存 / 今开平掉**（基准=今开仓均价）。
+这样"当天先加仓再平掉、平仓量大于昨仓"时不会重复计算。差额 ≤ 0.1 元记「是」。
 首个快照没有昨结算，盯市路径直接以逐笔为基准，「当日盈亏」记 0。
 
 ### 时间戳
@@ -217,3 +220,110 @@ FEISHU_APP_TOKEN=RDX2bwQhfaYeRhsZAwUcW6VYned
 - 12 月末：加算当年
 
 按「周期标识」upsert，同周期重复运行只更新不重复插行。
+
+---
+
+## 8. 本地操作手册
+
+### 环境
+
+| 项目 | 位置 |
+|---|---|
+| 项目目录 | `D:\futuretrading\code` |
+| Python 环境 | `D:\futuretrading\code\.venv`（依赖已装） |
+| 凭证 | `D:\futuretrading\code\.env` |
+| 日志 | `D:\futuretrading\code\logs\run.log` |
+| 复盘图输出 | `D:\futuretrading\code\charts\` |
+
+两种调用方式：
+
+```powershell
+# A. 直接调用解释器（推荐，不用激活）
+cd D:\futuretrading\code
+.\.venv\Scripts\python.exe main.py --mode 模式名
+
+# B. 先激活
+cd D:\futuretrading\code
+.\.venv\Scripts\Activate.ps1
+python main.py --mode 模式名
+```
+
+### 模式一览
+
+| 模式 | 作用 | 常用参数 |
+|---|---|---|
+| `diagnose` | 自检：token、7 张表权限、行情、评分 | — |
+| `realtime` | 日内盯盘：更新监控表，到点写历史 + CSV | `--dry-run` `--limit N` `--force-history` |
+| `position` | 交易日志 → 盈亏数额 / 持仓 / 是否持仓 | `--pending`（只处理「状态=已完成」） `--dry-run` |
+| `daily` | 持仓归集 + 每日快照 + 持仓结算价 | `--date YYYY-MM-DD` `--no-sync` `--dry-run` |
+| `monthly` | 月/季/年绩效（按月末规则） | `--force` `--date` |
+| `export-history` | 把飞书历史表补进 CSV | — |
+| `plot.py` | 双轴复盘图 | `--list` `--name` `--start` `--end` `--all` |
+
+### 日常场景
+
+| 场景 | 做法 |
+|---|---|
+| 每天盯盘 | 不用管，GitHub Actions 自动跑（09:00–11:30、13:30–15:00、21:00–23:00） |
+| 想看当前评分 | `realtime --dry-run`，或直接看飞书监控表 |
+| 录入一笔交易 | 飞书填完日志 → 状态改「已完成」→ 自动触发，约 40 秒 |
+| 收盘后要快照 | 不用管，18:10 自动跑 |
+| 补录了历史交易 | 飞书改状态触发；再 `daily --date 那天的日期` 重算 |
+| 月末绩效 | 不用管，月末 18:20 自动跑；调试用 `monthly --force` |
+| 看复盘图 | `git pull` → `plot.py --name 品种` → 浏览器打开 `charts\品种.html` |
+
+> 本地跑 `realtime` 会往 `data/*.csv` 追加数据，之后 `git pull` 可能和 Actions 的提交冲突。本地只想看行情就用 `--dry-run`；跑完真写入的话，执行 `git checkout -- data` 丢弃本地 CSV 改动（飞书已写入）。
+
+### 看复盘图
+
+```powershell
+cd D:\futuretrading\code
+git pull                                              # 拉最新 CSV
+.\.venv\Scripts\python.exe plot.py --list             # 看品种与时间范围
+.\.venv\Scripts\python.exe plot.py --name 螺纹钢       # 生成 charts\螺纹钢.html
+.\.venv\Scripts\python.exe plot.py --name 甲醇 --start 2026-10-22 --end 2026-10-31
+start charts\螺纹钢.html                               # 打开
+```
+
+- 左轴价格按动力系统三色分段，右轴趋势评分
+- 底部滑块选时间段，顶部 1天/1周/1月/3月/全部 快捷按钮
+- 图例可点击隐藏某条线；右上角相机图标导出 PNG
+- 也可以访问 GitHub Pages（见第 9 节）在手机上看最新图
+
+### 排查
+
+```powershell
+Get-Content D:\futuretrading\code\logs\run.log -Tail 50    # 最近日志
+```
+
+| 现象 | 原因 |
+|---|---|
+| `1254302` | 该表没给应用授权 |
+| `91403` | 应用对该表只读 |
+| `1254045` | 字段名和代码不一致 |
+| `没有日线数据（非交易日），跳过快照` | 周末/节假日，正常 |
+| `历史未到点` | 距上次写历史不到 15 分钟，正常 |
+| `校验=否` | 双路径差额 > 0.1，看日志里的"差额" |
+
+### Git
+
+```powershell
+cd D:\futuretrading\code
+git pull                 # 拉最新代码/数据
+git status               # 看本地改动
+git log --oneline -5
+```
+
+本地一般不需要 push：代码由开发者推，`data/*.csv` 由 Actions 自动提交。
+
+## 9. GitHub Pages（手机看复盘图）
+
+仓库里有一个「复盘图发布」工作流（`.github/workflows/pages.yml`），每个交易日 18:40 自动把 28 个品种的图发布到 GitHub Pages。
+
+首次使用需要手动开启一次：
+
+1. 仓库 → **Settings → Pages**
+2. Build and deployment → Source 选 **GitHub Actions**
+3. 回到 Actions → 「复盘图发布」→ **Run workflow**
+
+发布地址形如 `https://eleven-l-97.github.io/futuretrading/`，手机上打开就能选品种看图。
