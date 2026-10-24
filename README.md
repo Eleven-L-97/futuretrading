@@ -327,3 +327,46 @@ git log --oneline -5
 3. 回到 Actions → 「复盘图发布」→ **Run workflow**
 
 发布地址形如 `https://eleven-l-97.github.io/futuretrading/`，手机上打开就能选品种看图。
+
+---
+
+## 10. 指标参数在哪改
+
+改完保存即可，下一次 `realtime` 运行就生效（GitHub Actions 会在下一次 5 分钟任务里用新参数）。
+
+### 指标周期 —— `config.py` 顶部「指标参数」区域
+
+| 参数 | 变量 | 当前值 | 含义 |
+|---|---|---|---|
+| DMI 求和周期 | `DMI_N` | 8 | DMP/DMM/TR 的 N 周期求和 |
+| DMI 平均周期 | `DMI_M` | 3 | ADX = MA(DX, M) |
+| MACD 快线 | `MACD_FAST` | 12 | |
+| MACD 慢线 | `MACD_SLOW` | 26 | |
+| MACD 信号线 | `MACD_SIGNAL` | 9 | |
+| 动力系统斜率 EMA | `POWER_EMA_PERIOD` | 12 | 判断"向上/向下"的 EMA 周期 |
+| 强力指标快线 | `STRONG_FAST` | 2 | |
+| 强力指标慢线 | `STRONG_SLOW` | 13 | |
+| HPI 每点价值 | `HPI_CF` | 100 | 白银类可改 50 |
+| HPI 平滑周期 | `HPI_SPAN` | 14 | 同花顺为 EMA(K,14) |
+| 周K起点 | `WEEK_START_WEEKDAY` | 0 | 0=周一 |
+
+### 评分权重 —— `scoring.py` 顶部「评分权重」区域
+
+| 参数 | 变量 | 当前值 | 含义 |
+|---|---|---|---|
+| EMA 分 | `W_EMA` | 10 | EMA5 > EMA10 +10，否则 −10 |
+| 动力系统分 | `W_POWER` | 20 | 绿 +20 / 蓝 0 / 红 −20 |
+| 强力指标分 | `W_STRONG` | 20 | 慢线 >0 +20，否则 −20 |
+| DMI 阈值 | `W_ADX_TH` | 20 | ADX 低于该值不加分 |
+| DMI 上升分 | `W_DMI_UP` | 30 | ADX 上升时 ±30 |
+| DMI 下降分 | `W_DMI_DOWN` | 15 | ADX 下降时 ±15 |
+| HPI 同向分 | `W_HPI_UP` | 20 | >0 且升 +20 / <0 且降 −20 |
+| HPI 反向分 | `W_HPI_DOWN` | 10 | >0 且降 +10 / <0 且升 −10 |
+
+### 核对单个品种
+
+```powershell
+.\.venv\Scripts\python.exe main.py --mode check --code V0
+```
+
+会打印该品种五个维度的判定依据、各自得分、合计，以及周线/日线 HPI 的最新值与方向，方便和同花顺等行情软件对照。

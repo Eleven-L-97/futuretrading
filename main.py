@@ -175,6 +175,42 @@ def monthly(fs, dry_run=False, day=None, force=False):
     return performance.run(fs, dry_run=dry_run, today=day, force=force)
 
 
+def check(fs, code=None, limit=3):
+    """打印指定品种的评分明细，便于与行情软件核对。"""
+    rows = fs.read("monitor")
+    if code:
+        rows = [r for r in rows if as_text(r.get(M["code"])) == code]
+        if not rows:
+            print(f"监控表里没有代码 {code}")
+            return
+    else:
+        rows = rows[:limit]
+
+    for r in rows:
+        name = as_text(r.get(M["name"]))
+        cd = as_text(r.get(M["code"]))
+        daily = akd.get_daily(cd)
+        if daily is None:
+            print(f"{name}({cd}) 取不到日线")
+            continue
+        wk = ind.build_weekly(daily)
+        f = ind.week_features(wk)
+        items, total = sc.explain(f)
+        last = wk.iloc[-1]
+        print(f"\n=== {name} {cd}  周K截止 {last['date_end'].date()}  "
+              f"收盘 {last['close']}  {'(本周未完成)' if last['is_partial'] else ''} ===")
+        for key, desc, val in items:
+            print(f"  {key:6} {desc:58} {val:+d}")
+        print(f"  合计   {total:+d}   {sc.power_color(f)}")
+
+        hd = ind.hpi(daily)
+        hpw = ind.hpi(wk)
+        print(f"  参考：周线 HPI 最新 {f['hpi']:.0f}，上一周 {hpw.iloc[-2]:.0f} "
+              f"({'上升' if f['hpi'] > hpw.iloc[-2] else '下降'})")
+        print(f"        日线 HPI 最新 {hd.iloc[-1]:.0f}，上一日 {hd.iloc[-2]:.0f} "
+              f"({'上升' if hd.iloc[-1] > hd.iloc[-2] else '下降'})")
+
+
 def diagnose(fs):
     print("=" * 60)
     print("飞书连接自检")
@@ -220,7 +256,7 @@ def main():
     p = argparse.ArgumentParser(description="三重滤网交易系统自动化")
     p.add_argument("--mode", default="realtime",
                    choices=["realtime", "daily", "monthly", "all", "position",
-                            "export-history", "diagnose"])
+                            "export-history", "check", "diagnose"])
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--date", default=None, help="业务日期 YYYY-MM-DD")
@@ -229,6 +265,7 @@ def main():
     p.add_argument("--force-history", action="store_true", help="忽略 15 分钟节流，立即写历史与 CSV")
     p.add_argument("--pending", action="store_true",
                    help="只处理「状态=已完成」的交易日志（飞书自动化触发时用）")
+    p.add_argument("--code", default=None, help="--mode check 时指定品种代码，如 V0")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
 
@@ -253,6 +290,8 @@ def main():
             monthly(fs, dry_run=args.dry_run, day=day, force=args.force)
         elif args.mode == "diagnose":
             diagnose(fs)
+        elif args.mode == "check":
+            check(fs, code=args.code)
     except FeishuError as e:
         logger.error(f"飞书接口错误：{e}")
         sys.exit(2)

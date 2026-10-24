@@ -41,13 +41,28 @@ APP_ID = _cred("FEISHU_APP_ID", "cli_aa5b6fc5ef385d2a")
 APP_SECRET = _cred("FEISHU_APP_SECRET", "")
 APP_TOKEN = _cred("FEISHU_APP_TOKEN", "RDX2bwQhfaYeRhsZAwUcW6VYned")
 
-# ============ 可调常量（后续要改就改这里） ============
+# ============ 可调常量 ============
 INITIAL_EQUITY = 20000.0      # 初始本金，增资到10万时改成 100000.0
 TOLERANCE = 0.1               # 双路径校验容差（元）
 RISK_FREE_ANNUAL = 0.025      # 无风险利率
 TRADING_DAYS = 252            # 夏普年化系数
-HPI_CF = 100.0                # HPI 每点价值（赫里克默认100；白银类品种可改为50）
-HPI_S = 0.133                 # HPI 平滑因子
+
+# ============ 指标参数（要调指标周期就改这里） ============
+# DMI：同花顺公式 DMP/DMM/TR 用 N 周期求和，ADX = MA(DX, M)
+DMI_N = 8
+DMI_M = 3
+# 动力系统：MACD 柱 + EMA 斜率
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+POWER_EMA_PERIOD = 12         # 斜率用的 EMA 周期
+# 强力指标：快线 2 期 EMA，慢线 13 期 EMA
+STRONG_FAST = 2
+STRONG_SLOW = 13
+# HPI：cf 每点价值，span 为 EMA 平滑周期（同花顺为 EMA(K,14)）
+HPI_CF = 100.0                # 赫里克默认100；白银类品种可改为50
+HPI_SPAN = 14
+HPI_S = 0.133                 # 旧版平滑因子，仅作兼容保留
 WEEK_START_WEEKDAY = 0        # 周K起点：0=周一
 LOCAL_TZ = os.getenv("TRADING_TZ", "Asia/Shanghai")   # 业务时区（飞书日期按此时区解析）
 DAILY_BARS = 800              # 每次取多少根日线合成周K（约3年，够EMA26/HPI预热）
