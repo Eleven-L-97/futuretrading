@@ -227,6 +227,8 @@ def main():
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-sync", action="store_true")
     p.add_argument("--force-history", action="store_true", help="忽略 15 分钟节流，立即写历史与 CSV")
+    p.add_argument("--pending", action="store_true",
+                   help="只处理「状态=已完成」的交易日志（飞书自动化触发时用）")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
 
@@ -243,7 +245,7 @@ def main():
         elif args.mode == "monthly":
             monthly(fs, dry_run=args.dry_run, day=day, force=args.force)
         elif args.mode == "position":
-            sync_positions(fs, dry_run=args.dry_run)
+            sync_positions(fs, dry_run=args.dry_run, pending=args.pending)
         elif args.mode == "export-history":
             history_mod.export_from_feishu(fs)
         elif args.mode == "all":

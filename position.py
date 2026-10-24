@@ -233,11 +233,21 @@ def compute_journal_pnl(rows, mult_of):
     return out, warns
 
 
-def sync(fs, dry_run=False):
-    """执行持仓归集并回写表格。返回当前持仓字典。"""
+def sync(fs, dry_run=False, pending=False):
+    """执行持仓归集并回写表格。返回当前持仓字典。
+
+    pending=True 时只处理「状态=已完成」的记录，处理完把状态改成「已更新」，
+    供飞书自动化触发时使用；没有待处理记录则直接返回，避免自动化循环触发。
+    """
     rows = journal_rows(fs)
     if not rows:
         logger.info("交易日志为空：按「无持仓」处理，清空持仓表并回写「是否持仓=否」")
+
+    status_key = F.get("status")
+    pending_rows = [r for r in rows if status_key and as_text(r.get(status_key)) == "已完成"]
+    if pending and not pending_rows:
+        logger.info("没有「状态=已完成」的交易日志，跳过本次处理（防止自动化循环触发）")
+        return {}
 
     # 提示缺战术字段的行
     for r in rows:
@@ -306,7 +316,8 @@ def sync(fs, dry_run=False):
                                  "fields": {M["holding"]: want, M["updated_at"]: ts_now}})
 
     logger.info(f"持仓归集：在仓 {len(pos)} 个（{sorted(holdings)}），"
-                f"新增 {len(to_create)}，更新 {len(to_update)}，清仓删除 {len(stale)}")
+                f"新增 {len(to_create)}，更新 {len(to_update)}，清仓删除 {len(stale)}，"
+                f"待标记已更新 {len(pending_rows)}")
 
     if dry_run:
         logger.info("[dry-run] 不写入飞书")
@@ -318,6 +329,10 @@ def sync(fs, dry_run=False):
         fs.batch_update(cfg.TABLES["journal"], journal_updates)
     if journal_clears:
         fs.batch_update(cfg.TABLES["journal"], journal_clears)
+    if status_key and pending_rows:
+        fs.batch_update(cfg.TABLES["journal"],
+                        [{"record_id": r["_id"], "fields": {status_key: "已更新"}}
+                         for r in pending_rows])
     if to_create:
         fs.batch_create(cfg.TABLES["position"], to_create)
     if to_update:

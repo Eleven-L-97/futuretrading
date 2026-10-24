@@ -114,6 +114,7 @@ JOURNAL_FIELDS = {
     "open_px": "开仓价", "open_qty": "开仓数量", "open_fee": "开仓手续费",
     "close_px": "平仓价", "close_qty": "平仓数量", "close_fee": "平仓手续费",
     "pnl": "盈亏数额", "pnl_ratio": "盈亏比例", "updated_at": "最后更新时间",
+    "status": "状态",
 }
 POS_FIELDS = {
     "name": "期货品种", "contract": "合约名称", "qty": "持仓数量",
@@ -126,9 +127,8 @@ SNAP_FIELDS = {
     "date": "快照日期", "equity": "账户价值", "available": "可用资金",
     "margin": "保证金", "usage": "资金使用率", "daily_pnl": "当日盈亏",
     "daily_ret": "当日收益率", "cum_pnl": "累计盈亏", "cum_fee": "累计手续费",
-    "settle": "结算价", "mtm_equity": "盯市账户价值",
-    "tick_equity": "逐笔账户价值", "ok": "校验是否通过",
-    "updated_at": "最后更新时间",
+    "mtm_equity": "盯市账户价值", "tick_equity": "逐笔账户价值",
+    "ok": "校验是否通过", "updated_at": "最后更新时间",
 }
 PERF_FIELDS = {
     "cycle_id": "周期标识", "period": "统计周期", "start_date": "周期起始日",
@@ -149,6 +149,7 @@ OPTIONS = {
     "ok": ["是", "否"],
     "period": ["月", "季", "年"],
     "trend": ["上升", "下降", "震荡"],
+    "status": ["已完成", "已更新"],
     "history_name": ["棕榈油", "纯苯", "铁矿石", "菜籽油", "焦炭", "焦煤", "PVC", "塑料",
                      "聚丙烯", "乙二醇", "苯乙烯", "尿素", "对二甲苯", "瓶片", "花生", "白糖",
                      "豆粕", "玉米", "玉米淀粉", "菜籽粕", "玻璃", "螺纹钢", "甲醇", "纯碱",

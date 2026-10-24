@@ -1,0 +1,41 @@
+name: 交易日志更新
+
+# 由飞书多维表格自动化通过 HTTP 调用 GitHub API 触发：
+#   POST /repos/Eleven-L-97/futuretrading/actions/workflows/position.yml/dispatches
+#   body: {"ref":"main"}
+# 也可以手动触发（Actions 页面 Run workflow）。
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [journal-updated]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: position
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Shanghai
+      FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+      FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+      FEISHU_APP_TOKEN: ${{ secrets.FEISHU_APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 交易日志 -> 盈亏数额 / 持仓 / 是否持仓
+        run: python main.py --mode position --pending
