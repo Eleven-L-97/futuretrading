@@ -68,6 +68,35 @@ def _week_start(ts):
     return ts - pd.Timedelta(days=(ts.weekday() - cfg.WEEK_START_WEEKDAY) % 7)
 
 
+def _daily_with_spot(daily, quote):
+    """把快照所属交易日补成一根日线，让周K包含最新的夜盘/盘中时段。
+
+    国内期货的夜盘属于**下一个交易日**：周五 21:00 的夜盘算下周一，
+    同花顺的周K就是从周五夜盘开始画的。日线数据要等下一个交易日收盘才有，
+    所以盘中/夜盘先用实时快照拼一根"当日"日线，保证周K与行情软件一致。
+    """
+    if daily is None or not quote:
+        return daily
+    td = quote.get("tradedate")
+    if not td:
+        return daily
+    try:
+        td = pd.Timestamp(td).normalize()
+    except Exception:
+        return daily
+    if len(daily) and td <= daily["date"].max():
+        return daily
+    o, h, l, p = quote.get("open"), quote.get("high"), quote.get("low"), quote.get("price")
+    if None in (o, h, l, p):
+        return daily
+    bar = pd.DataFrame([{
+        "date": td, "open": o, "high": h, "low": l, "close": p,
+        "volume": quote.get("volume") or 0, "oi": quote.get("oi") or 0,
+        "settle": float("nan"),
+    }])
+    return pd.concat([daily, bar], ignore_index=True)
+
+
 def realtime(fs, dry_run=False, limit=None, force_history=False):
     """日内一批：抓行情 -> 算分 -> 写监控表 -> 每 15 分钟追加历史（双表 + CSV）。"""
     rows = fs.read("monitor")
@@ -110,6 +139,7 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
             fields[M["contract"]] = quote["contract"]
 
         score_val, color = None, None
+        daily = _daily_with_spot(daily, quote)
         if daily is not None:
             wk = ind.build_weekly(daily)
             feat = ind.week_features(wk)
@@ -193,6 +223,7 @@ def check(fs, code=None, limit=3):
         if daily is None:
             print(f"{name}({cd}) 取不到日线")
             continue
+        daily = _daily_with_spot(daily, akd.get_quote(cd))
         wk = ind.build_weekly(daily)
         f = ind.week_features(wk)
         items, total = sc.explain(f)
