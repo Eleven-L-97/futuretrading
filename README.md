@@ -122,6 +122,38 @@ FEISHU_APP_TOKEN=RDX2bwQhfaYeRhsZAwUcW6VYned
    - `monthly.yml`：`20 10 28-31 * *`（北京 18:20，脚本自己判断是否月末）
 4. `realtime.yml` 需要 `permissions: contents: write`（已配置），否则 CSV 推不回去。
 
+### 补算历史快照
+
+补录了某天的交易后，手动运行「收盘快照」并填写 `date`（如 `2026-10-23`）即可重算那天的快照，同时把持仓表的结算价刷新：
+`python main.py --mode daily --date 2026-10-23`
+
+非交易日（周末/节假日）直接运行会打印"没有日线数据（非交易日），跳过快照"，这是正常的。
+
+## 7. 飞书自动化：交易日志 → GitHub Actions
+
+交易日志表里的「状态」字段：**已完成** = 待处理，**已更新** = 已处理。
+
+1. 飞书多维表格 → 自动化 → 新建
+2. 触发条件：**新增/修改的记录满足条件时**
+   - 数据表：交易日志
+   - 条件：**状态 等于 已完成**
+3. 操作：**发送 HTTP 请求**
+   ```
+   URL:  https://api.github.com/repos/<owner>/<repo>/dispatches
+   方法: POST
+   请求头:
+     Authorization: Bearer <fine-grained token，需 Contents: 读写>
+     Content-Type: application/json
+   请求体: {"event_type":"journal-updated"}
+   响应体: 选「文本 / 不解析」——GitHub 成功时返回 204 空响应，选 JSON 会解析失败
+   ```
+4. 保存启用后，把一条日志状态改成「已完成」，Actions 会出现「交易日志更新」运行，约 40 秒后状态自动变「已更新」。
+
+> 两个坑：
+> - `workflow_dispatch` 接口需要 **Actions** 权限，`repository_dispatch` 需要 **Contents** 权限，别混用。
+> - 飞书只根据"HTTP 请求是否完成"标记成功，**403/404 也会显示成功**，一定要去 GitHub Actions 确认有没有真的产生运行。
+> - 响应体是 204 空内容，响应配置若选 JSON 会报「出参返回格式不正确」，改选文本即可。
+
 ### 已知限制
 
 - GitHub 定时任务会延迟 5–15 分钟，5 分钟粒度只能"尽量"

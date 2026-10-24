@@ -186,18 +186,19 @@ def today_flows(rows, day):
 
 
 def compute_journal_pnl(rows, mult_of):
-    """按需求口径计算每条平仓记录的「盈亏数额」。
+    """计算每条平仓记录的「盈亏数额」，与持仓管理的加权平均成本保持一致。
 
     规则：
-    - 同一品种同一方向，找到「上一条平仓记录之后」到「本条平仓记录」之间的所有开仓行，
-      用它们算加权平均价作为开仓均价（每次平仓后该区间重置）。
-    - 多：(平仓价 - 开仓均价) × 乘数 × 平仓数量 - 开仓手续费 - 平仓手续费
-      空：(开仓均价 - 平仓价) × 乘数 × 平仓数量 - 开仓手续费 - 平仓手续费
-    - 开仓手续费按平仓数量占该区间总开仓量的比例分摊。
+    - 维护每个 (品种, 方向) 的持仓池：数量、加权均价、剩余开仓手续费。
+    - 平仓：用**整个持仓池**的加权均价作为成本（而不是只看「上一次平仓之后」的开仓行）。
+    - 多：(平仓价 - 均价) × 乘数 × 平仓数量 - 开仓手续费分摊 - 平仓手续费
+      空：(均价 - 平仓价) × 乘数 × 平仓数量 - 开仓手续费分摊 - 平仓手续费
+    - 开仓手续费按平仓数量占池中数量的比例分摊。
 
-    返回 ({record_id: pnl}, [警告])。
+    为什么不用「两次平仓之间的开仓行」：当一次平仓的数量大于这段时间新开的数量时，
+    会用到更早批次的老仓，那批老仓的成本价不一样，只按新开仓行算会把盈亏算高/算低。
     """
-    blocks = {}
+    pools = {}   # key -> {"qty": 剩余数量, "amount": 剩余成本金额, "fee": 剩余开仓手续费}
     out = {}
     warns = []
     for r in rows:
@@ -211,25 +212,37 @@ def compute_journal_pnl(rows, mult_of):
             qty = as_num(r.get(F["close_qty"]), 0) or 0
             px = as_num(r.get(F["close_px"]), 0) or 0
             fee_close = as_num(r.get(F["close_fee"]), 0) or 0
-            block = blocks.pop(key, [])
-            if not block:
+            pool = pools.get(key)
+            if not pool or pool["qty"] <= EPS:
                 warns.append(f"{r['_date'].date()} {name} {direction} 平仓行找不到对应开仓行，盈亏数额未计算")
                 continue
             if qty <= 0 or px <= 0:
                 warns.append(f"{r['_date'].date()} {name} {direction} 平仓行缺平仓价/数量，盈亏数额未计算")
                 continue
-            total_qty = sum(b["qty"] for b in block)
-            avg = sum(b["qty"] * b["px"] for b in block) / total_qty if total_qty else 0.0
-            fee_open = sum(b["fee"] for b in block) * min(qty, total_qty) / total_qty if total_qty else 0.0
+            held_qty = pool["qty"]
+            q = min(qty, held_qty)
+            if qty > held_qty + EPS:
+                warns.append(f"{r['_date'].date()} {name} {direction} 平仓 {qty} 手大于持仓 {held_qty} 手，按 {held_qty} 手计算")
+            avg = pool["amount"] / held_qty
+            fee_open = pool["fee"] * q / held_qty
             mult = mult_of.get(name, 1) or 1
             sign = 1 if direction == "多" else -1
-            out[r["_id"]] = round((px - avg) * mult * qty * sign - fee_open - fee_close, 2)
+            out[r["_id"]] = round((px - avg) * mult * q * sign - fee_open - fee_close, 2)
+            # 回写持仓池
+            pool["qty"] -= q
+            pool["amount"] -= avg * q
+            pool["fee"] -= fee_open
+            if pool["qty"] <= EPS:
+                pools.pop(key, None)
         else:
             qty = as_num(r.get(F["open_qty"]), 0) or 0
             px = as_num(r.get(F["open_px"]), 0) or 0
             fee = as_num(r.get(F["open_fee"]), 0) or 0
             if qty > 0 and px > 0:
-                blocks.setdefault(key, []).append({"qty": qty, "px": px, "fee": fee})
+                pool = pools.setdefault(key, {"qty": 0.0, "amount": 0.0, "fee": 0.0})
+                pool["qty"] += qty
+                pool["amount"] += qty * px
+                pool["fee"] += fee
     return out, warns
 
 
