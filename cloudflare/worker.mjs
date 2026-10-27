@@ -35,6 +35,18 @@ async function dispatch(env, eventType) {
 }
 
 export default {
+  // 浏览器打开 Worker 地址即可手动测试：
+  //   https://<worker>.<子域>.workers.dev/                  -> 触发实时盯盘
+  //   https://<worker>.<子域>.workers.dev/?event=daily-snapshot
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const ev = url.searchParams.get("event") || "realtime-tick";
+    await dispatch(env, ev);
+    return new Response(`已触发 ${ev}，请到 GitHub Actions 查看运行。\n`, {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  },
+
   async scheduled(event, env, ctx) {
     const now = new Date();
     const dow = now.getUTCDay();              // 0=周日
