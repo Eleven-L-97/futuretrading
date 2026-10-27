@@ -88,8 +88,10 @@ python plot.py --all                                    # 每个品种一张
 ```
 
 - 左轴：当前价格，**按动力系统三色（红/绿/蓝）分段着色**
-- 右轴：趋势评分（灰色虚线，固定 -110~110）
-- 图下方滑块可拖选时间段，上方有 1天/1周/1月/3月/全部 快捷按钮
+- 右轴：趋势评分，**紫色加粗虚线**（固定 -110~110）
+- 横轴只显示有行情的交易时段：午休、收盘后、隔夜不占位置
+- 左上角 1天/1周/1月/3月/全部 按钮，范围与周K聚合一致（夜盘算下一交易日，所以"1天"= 前一日夜盘 + 当日日盘）
+- 图例在右上角，不与按钮重叠；鼠标拖拽可自由缩放
 - 数据来自 `data/history.csv`、`data/history2.csv`（本地或仓库里的完整历史）
 
 ---
@@ -321,7 +323,7 @@ git log --oneline -5
 
 ## 9. GitHub Pages（手机看复盘图）
 
-仓库里有一个「复盘图发布」工作流（`.github/workflows/pages.yml`），每个交易日 18:40 自动把 28 个品种的图发布到 GitHub Pages。
+仓库里有一个「复盘图发布」工作流（`.github/workflows/pages.yml`），每个交易日 **15:10**（由外部定时器触发）把 28 个品种的图发布到 GitHub Pages。
 
 首次使用需要手动开启一次：
 
@@ -373,3 +375,61 @@ git log --oneline -5
 ```
 
 会打印该品种五个维度的判定依据、各自得分、合计，以及周线/日线 HPI 的最新值与方向，方便和同花顺等行情软件对照。
+
+---
+
+## 11. 外部定时器（Cloudflare Worker）
+
+GitHub 自带的 `schedule` 延迟较严重（新仓库尤其明显，实测 20–40 分钟），所以把"到点"这件事交给 Cloudflare Worker，GitHub 只负责跑工作流。
+
+### 原理
+
+Worker 每分钟被 Cloudflare 唤醒一次，在内部判断北京时间：
+
+| 时点（北京） | 触发的事件 | 对应工作流 |
+|---|---|---|
+| 09:00–11:30 / 13:30–15:00 / 21:00–23:00，每 5 分钟 | `realtime-tick` | 日内盯盘 |
+| 每交易日 18:10 | `daily-snapshot` | 收盘快照 |
+| 每交易日 15:10 | `pages-build` | 复盘图发布 |
+| 每月 28–31 日 18:20 | `monthly-perf` | 绩效指标 |
+
+触发方式：`POST https://api.github.com/repos/Eleven-L-97/futuretrading/dispatches`，body `{"event_type":"..."}`。
+工作流里已删除 `schedule`，只保留 `repository_dispatch` 和手动触发，避免重复运行。
+
+### 部署步骤（一次性）
+
+```bash
+# 1. 安装 wrangler（Node.js 已装的话直接跑）
+npm i -g wrangler
+
+# 2. 登录 Cloudflare（浏览器授权）
+wrangler login
+
+# 3. 进入项目目录
+cd D:\futuretrading\code\cloudflare
+
+# 4. 写入 GitHub token（fine-grained，只勾 Contents: Read and write）
+wrangler secret put GH_TOKEN
+# 粘贴 token 回车
+
+# 5. 部署（会自动注册每分钟的 cron）
+wrangler deploy
+```
+
+部署成功后会显示 Worker 地址和 cron 状态。
+
+### 验证
+
+```bash
+cd D:\futuretrading\code\cloudflare
+wrangler tail
+```
+
+等到交易时段的整 5 分钟，应看到 `realtime-tick -> 204`；18:10 看到 `daily-snapshot -> 204`。
+
+### 说明
+
+- Cloudflare 免费额度：每天 10 万次请求，每分钟一次一天 1440 次，完全够用
+- token 存在 Cloudflare 的加密变量里，不写在代码中
+- 想改时点，只改 `cloudflare/worker.mjs` 里的 `sessions` / `mins` 判断，再 `wrangler deploy`
+- 临时停用：Cloudflare 控制台 → Workers → futures-cron → Triggers → 删除 cron

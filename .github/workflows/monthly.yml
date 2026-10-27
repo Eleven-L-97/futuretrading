@@ -1,10 +1,10 @@
 name: 绩效指标
 
-# 月末最后一天 18:20（北京时间）计算月/季/年绩效。
-# 28-31 每天都触发一次，脚本内部判断「今天是否月末」，不是月末会自动跳过。
+# 由外部定时器触发：每月 28-31 日 18:20（北京时间），脚本内部判断是否月末
+#   POST /repos/Eleven-L-97/futuretrading/dispatches  {"event_type":"monthly-perf"}
 on:
-  schedule:
-    - cron: '20 10 28-31 * *'   # UTC 10:20 = 北京 18:20
+  repository_dispatch:
+    types: [monthly-perf]
   workflow_dispatch:
 
 permissions:

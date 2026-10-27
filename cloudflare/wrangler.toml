@@ -1,0 +1,7 @@
+name = "futures-cron"
+main = "worker.mjs"
+compatibility_date = "2026-01-01"
+
+# 每分钟触发一次，Worker 内部再按交易时段/时点决定是否调用 GitHub
+[triggers]
+crons = ["* * * * *"]

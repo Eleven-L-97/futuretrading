@@ -1,10 +1,11 @@
 name: 收盘快照
 
-# 每个交易日 18:10（北京时间）跑一次：交易日志 -> 持仓归集 -> 每日账户快照
-# 手动触发时可以指定日期，用来补算/重算历史日期的快照（例如周末补录了周五的交易）
+# 由外部定时器触发：每个交易日 18:10（北京时间）
+#   POST /repos/Eleven-L-97/futuretrading/dispatches  {"event_type":"daily-snapshot"}
+# 手动触发时可指定日期，用来补算/重算历史快照。
 on:
-  schedule:
-    - cron: '10 10 * * 1-5'   # UTC 10:10 = 北京 18:10
+  repository_dispatch:
+    types: [daily-snapshot]
   workflow_dispatch:
     inputs:
       date:
