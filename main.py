@@ -84,11 +84,28 @@ def _daily_with_spot(daily, quote):
         td = pd.Timestamp(td).normalize()
     except Exception:
         return daily
-    if len(daily) and td <= daily["date"].max():
+    last = daily["date"].max() if len(daily) else None
+    if last is not None and td < last:
         return daily
+
     o, h, l, p = quote.get("open"), quote.get("high"), quote.get("low"), quote.get("price")
     if None in (o, h, l, p):
         return daily
+
+    # 当天/当周那根日线还没收盘：用实时快照刷新它，避免用到滞后的收盘价
+    if last is not None and td == last:
+        i = daily.index[-1]
+        daily.loc[i, "close"] = p
+        if h is not None:
+            daily.loc[i, "high"] = max(float(daily.loc[i, "high"] or h), h)
+        if l is not None:
+            daily.loc[i, "low"] = min(float(daily.loc[i, "low"] or l), l)
+        if quote.get("volume"):
+            daily.loc[i, "volume"] = quote["volume"]
+        if quote.get("oi"):
+            daily.loc[i, "oi"] = quote["oi"]
+        return daily
+
     bar = pd.DataFrame([{
         "date": td, "open": o, "high": h, "low": l, "close": p,
         "volume": quote.get("volume") or 0, "oi": quote.get("oi") or 0,
