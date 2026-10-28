@@ -1,10 +1,13 @@
 name: 复盘图发布
 
-# 由外部定时器触发：每个交易日 15:10（北京时间）
-#   POST /repos/Eleven-L-97/futuretrading/dispatches  {"event_type":"pages-build"}
+# 触发方式：
+#   1) 外部定时器：{"event_type":"pages-build"}
+#   2) 兜底：GitHub schedule（UTC 07:10 = 北京 15:10）
 on:
   repository_dispatch:
     types: [pages-build]
+  schedule:
+    - cron: '10 7 * * 1-5'
   workflow_dispatch:
 
 permissions:

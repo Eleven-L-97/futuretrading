@@ -49,6 +49,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     const now = new Date();
+    console.log(`cron tick ${now.toISOString()}`);   // 用来确认 cron 是否真的在跑
     const dow = now.getUTCDay();              // 0=周日
     const h = now.getUTCHours();
     const m = now.getUTCMinutes();

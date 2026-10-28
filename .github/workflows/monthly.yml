@@ -1,10 +1,13 @@
 name: 绩效指标
 
-# 由外部定时器触发：每月 28-31 日 18:20（北京时间），脚本内部判断是否月末
-#   POST /repos/Eleven-L-97/futuretrading/dispatches  {"event_type":"monthly-perf"}
+# 触发方式：
+#   1) 外部定时器：{"event_type":"monthly-perf"}
+#   2) 兜底：GitHub schedule（UTC 10:20 = 北京 18:20，28-31 日）
 on:
   repository_dispatch:
     types: [monthly-perf]
+  schedule:
+    - cron: '20 10 28-31 * *'
   workflow_dispatch:
 
 permissions:
