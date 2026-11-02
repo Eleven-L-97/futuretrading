@@ -1,0 +1,54 @@
+name: 换月检查
+
+# 每个交易日 15:25（北京时间）检查主力合约是否换月；换了就自动调整前复权缓存。
+# 也可以手动触发，或用外部定时器发送 {"event_type":"roll-check"}
+on:
+  repository_dispatch:
+    types: [roll-check]
+  schedule:
+    - cron: '25 7 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write        # 需要把 data/adj 与 contracts.json 提交回仓库
+
+concurrency:
+  group: rollcheck
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Shanghai
+      FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+      FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+      FEISHU_APP_TOKEN: ${{ secrets.FEISHU_APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 换月检查
+        run: python -u scripts/roll_check.py
+
+      - name: 提交缓存变更
+        run: |
+          git config user.name "futures-bot"
+          git config user.email "futures-bot@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data)" ]; then
+            git add data
+            git commit -m "roll: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git pull --rebase --autostash
+            git push
+          else
+            echo "没有换月，跳过提交"
+          fi
