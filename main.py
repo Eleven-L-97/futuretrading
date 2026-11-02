@@ -22,7 +22,7 @@ import os
 import socket
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime
 
 import pandas as pd
@@ -133,9 +133,22 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
         code = as_text(row.get(M["code"]))
         return row, (akd.get_quote(code) if code else None), (akd.get_daily(code) if code else None)
 
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        fetched = list(pool.map(fetch, rows))
-    logger.info(f"行情抓取完成 {len(fetched)} 条")
+    # 行情源（新浪）偶尔很慢，给整批抓取设一个硬超时：拿到多少算多少，绝不拖到任务超时
+    pool = ThreadPoolExecutor(max_workers=8)
+    futures = {pool.submit(fetch, row): row for row in rows}
+    done, pending = wait(futures, timeout=cfg.FETCH_TIMEOUT)
+    fetched = []
+    for fut in done:
+        try:
+            fetched.append(fut.result())
+        except Exception as e:
+            logger.warning(f"抓取失败：{e}")
+    if pending:
+        logger.warning(f"行情抓取超时，跳过 {len(pending)} 个品种（下次再补）")
+        for fut in pending:
+            fut.cancel()
+    pool.shutdown(wait=False)
+    logger.info(f"行情抓取完成 {len(fetched)}/{len(rows)} 条")
 
     ts_now = now_ms()
     today = local_today()
@@ -357,3 +370,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # 行情线程可能仍卡在网络上（无法强制中断），写完飞书后直接退出，避免进程挂到超时
+    sys.stdout.flush()
+    os._exit(0)

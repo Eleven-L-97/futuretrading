@@ -48,6 +48,8 @@ RISK_FREE_ANNUAL = 0.025      # 无风险利率
 TRADING_DAYS = 252            # 夏普年化系数
 
 # ============ 指标参数（要调指标周期就改这里） ============
+# 行情抓取总超时（秒）：超过就跳过没返回的品种，避免整个任务被拖到超时
+FETCH_TIMEOUT = 90
 # DMI：同花顺公式 DMP/DMM/TR 用 N 周期求和，ADX = MA(DX, M)
 DMI_N = 8
 DMI_M = 3
