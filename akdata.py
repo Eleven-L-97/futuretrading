@@ -13,6 +13,7 @@
 """
 import json
 import logging
+import os
 import time
 import urllib.request
 
@@ -169,44 +170,77 @@ def get_daily(code, bars=None, tries=3):
     return df
 
 
-def get_daily_adj(name, bars=None):
-    """前复权主力连续日线（东方财富，与同花顺口径一致）。
+def _em_daily(name, bars):
+    """东方财富前复权主连（国内网络可访问）。"""
+    symbol = cfg.EM_ALIAS.get(name, name) + "主连"
+    import akshare as ak
+    raw = ak.futures_hist_em(symbol=symbol, period="daily",
+                             start_date="20220101", end_date="20500101")
+    if raw is None or raw.empty:
+        raise ValueError("返回空数据")
+    df = raw.rename(columns={
+        "时间": "date", "开盘": "open", "最高": "high", "最低": "low",
+        "收盘": "close", "成交量": "volume", "持仓量": "oi",
+    })
+    keep = [c for c in ("date", "open", "high", "low", "close", "volume", "oi") if c in df.columns]
+    df = df[keep].copy()
+    df["date"] = pd.to_datetime(df["date"])
+    for c in ("open", "high", "low", "close", "volume", "oi"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = (df.dropna(subset=["close"]).sort_values("date")
+            .drop_duplicates("date").reset_index(drop=True))
+    if len(df) > bars:
+        df = df.tail(bars).reset_index(drop=True)
+    return df
 
-    用于趋势评分：东财主连带 fqt=1 前复权，换月跳空已抹平，
-    算出来的 EMA / DMI / 强力指标 / HPI 与同花顺逐项一致。
-    取不到时返回 None，调用方回退到 get_daily()。
+
+def get_daily_adj(name, code=None, bars=None):
+    """前复权主力连续日线（与同花顺口径一致）。
+
+    优先读 data/adj/<品种>.csv（由 scripts/build_adj_cache.py 用东财数据生成，
+    因为东财接口在境外会被断开）；缓存之后缺失的交易日用新浪连续补齐。
+    没有缓存时退回东财实时接口。都失败返回 None。
     """
     if not name:
         return None
-    if name in _ADJ_CACHE:
-        return _ADJ_CACHE[name]
+    key = (name, code)
+    if key in _ADJ_CACHE:
+        return _ADJ_CACHE[key]
     bars = bars or cfg.DAILY_BARS
-    symbol = cfg.EM_ALIAS.get(name, name) + "主连"
-    try:
-        import akshare as ak
-        raw = ak.futures_hist_em(symbol=symbol, period="daily",
-                                 start_date="20220101", end_date="20500101")
-        if raw is None or raw.empty:
-            raise ValueError("返回空数据")
-        df = raw.rename(columns={
-            "时间": "date", "开盘": "open", "最高": "high", "最低": "low",
-            "收盘": "close", "成交量": "volume", "持仓量": "oi",
-        })
-        keep = [c for c in ("date", "open", "high", "low", "close", "volume", "oi") if c in df.columns]
-        df = df[keep].copy()
-        df["date"] = pd.to_datetime(df["date"])
-        for c in ("open", "high", "low", "close", "volume", "oi"):
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        df = (df.dropna(subset=["close"]).sort_values("date")
-                .drop_duplicates("date").reset_index(drop=True))
-        if len(df) > bars:
-            df = df.tail(bars).reset_index(drop=True)
-        _ADJ_CACHE[name] = df
-        return df
-    except Exception as e:
-        logger.warning(f"{name} 东财前复权数据获取失败（回退新浪连续）：{e}")
-        return None
+
+    df = None
+    path = os.path.join(cfg.DATA_DIR, "adj", f"{name}.csv")
+    if os.path.exists(path):
+        try:
+            df = pd.read_csv(path, encoding="utf-8-sig")
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").drop_duplicates("date").reset_index(drop=True)
+        except Exception as e:
+            logger.warning(f"{name} 复权缓存读取失败：{e}")
+            df = None
+    if df is None:
+        try:
+            df = _em_daily(name, bars)
+        except Exception as e:
+            logger.warning(f"{name} 东财前复权数据获取失败（回退新浪连续）：{e}")
+            return None
+
+    # 缓存之后的新交易日：用新浪连续补齐（同一合约期内价格与复权值一致）
+    if code:
+        sina = get_daily(code)
+        if sina is not None and len(sina):
+            tail = sina[sina["date"] > df["date"].max()]
+            if len(tail):
+                cols = [c for c in ("date", "open", "high", "low", "close", "volume", "oi")
+                        if c in tail.columns and c in df.columns]
+                df = pd.concat([df, tail[cols]], ignore_index=True)
+
+    df = df.dropna(subset=["close"]).sort_values("date").reset_index(drop=True)
+    if len(df) > bars:
+        df = df.tail(bars).reset_index(drop=True)
+    _ADJ_CACHE[key] = df
+    return df
 
 
 def latest_settle(df, target_date=None):

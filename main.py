@@ -139,7 +139,7 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
         if not code:
             return row, None, None
         # 评分用东财前复权主连（与同花顺一致），取不到再回退新浪连续
-        daily = akd.get_daily_adj(name)
+        daily = akd.get_daily_adj(name, code)
         if daily is None:
             daily = akd.get_daily(code)
         return row, akd.get_quote(code), daily
@@ -268,7 +268,7 @@ def check(fs, code=None, limit=3):
     for r in rows:
         name = as_text(r.get(M["name"]))
         cd = as_text(r.get(M["code"]))
-        daily = akd.get_daily_adj(name)
+        daily = akd.get_daily_adj(name, cd)
         if daily is None:
             daily = akd.get_daily(cd)
         if daily is None:
