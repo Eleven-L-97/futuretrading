@@ -276,9 +276,13 @@ class Feishu:
         return int(self.search(table_id, body).get("total", 0) or 0)
 
     def find_ids(self, table_id, filter_obj=None, page_size=500):
-        """按条件取出所有 record_id（自动翻页）。"""
-        ids, token = [], None
-        while True:
+        """按条件取出所有 record_id（自动翻页）。
+
+        防御：飞书在带筛选条件时偶发「has_more 一直为 true 且 page_token 不变」，
+        会无限循环。这里记录已用过的 token、限制最大页数，保证一定会返回。
+        """
+        ids, token, seen = [], None, set()
+        for _ in range(60):
             body = {"page_size": page_size}
             if filter_obj:
                 body["filter"] = filter_obj
@@ -289,8 +293,9 @@ class Feishu:
             if not data.get("has_more"):
                 break
             token = data.get("page_token")
-            if not token:
+            if not token or token in seen:
                 break
+            seen.add(token)
         return ids
 
     # ------------------------------------------------------------------ 写

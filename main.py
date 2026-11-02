@@ -40,6 +40,10 @@ import performance
 # 有些数据源（akshare/新浪）内部请求没设超时，偶发网络卡住会把任务拖到超时被杀
 socket.setdefaulttimeout(20)
 
+# 看门狗：5 分钟后打印所有线程堆栈并退出，既能看到卡在哪，也不会占着并发队列
+import faulthandler
+faulthandler.dump_traceback_later(300, exit=True)
+
 M = cfg.MONITOR_FIELDS
 H = cfg.HIST_FIELDS
 
@@ -158,6 +162,7 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
     due = force_history or history_mod.history_due(ts_now)
     if due and not dry_run:
         history_mod.clear_previous_weeks(fs)
+        logger.info("清理上周历史完成")
 
     for row, quote, daily in fetched:
         name = as_text(row.get(M["name"]))
