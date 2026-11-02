@@ -135,7 +135,14 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
 
     def fetch(row):
         code = as_text(row.get(M["code"]))
-        return row, (akd.get_quote(code) if code else None), (akd.get_daily(code) if code else None)
+        name = as_text(row.get(M["name"]))
+        if not code:
+            return row, None, None
+        # 评分用东财前复权主连（与同花顺一致），取不到再回退新浪连续
+        daily = akd.get_daily_adj(name)
+        if daily is None:
+            daily = akd.get_daily(code)
+        return row, akd.get_quote(code), daily
 
     # 行情源（新浪）偶尔很慢，给整批抓取设一个硬超时：拿到多少算多少，绝不拖到任务超时
     pool = ThreadPoolExecutor(max_workers=8)
@@ -261,7 +268,9 @@ def check(fs, code=None, limit=3):
     for r in rows:
         name = as_text(r.get(M["name"]))
         cd = as_text(r.get(M["code"]))
-        daily = akd.get_daily(cd)
+        daily = akd.get_daily_adj(name)
+        if daily is None:
+            daily = akd.get_daily(cd)
         if daily is None:
             print(f"{name}({cd}) 取不到日线")
             continue

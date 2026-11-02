@@ -69,6 +69,14 @@ WEEK_START_WEEKDAY = 0        # 周K起点：0=周一
 LOCAL_TZ = os.getenv("TRADING_TZ", "Asia/Shanghai")   # 业务时区（飞书日期按此时区解析）
 DAILY_BARS = 800              # 每次取多少根日线合成周K（约3年，够EMA26/HPI预热）
 
+# 趋势评分用的日线来源：东方财富"前复权主连"，与同花顺口径一致
+# 名称别名（东财对这三个品种用简称，其余都是「品种名 + 主连」）
+EM_ALIAS = {
+    "玉米淀粉": "淀粉",
+    "菜籽粕": "菜粕",
+    "菜籽油": "菜油",
+}
+
 # ============ 历史数据复盘 ============
 # 写入节奏：每 HISTORY_INTERVAL_MIN 分钟一次（实时行情仍按 5 分钟刷新）
 HISTORY_INTERVAL_MIN = int(os.getenv("HISTORY_INTERVAL_MIN", "15"))

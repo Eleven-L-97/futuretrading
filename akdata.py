@@ -28,6 +28,7 @@ SINA_MARKET_URL = ("https://vip.stock.finance.sina.com.cn/quotes_service/api/jso
 
 _DAILY_CACHE = {}   # code -> (ts, DataFrame)
 _QUOTE_CACHE = {}   # code -> (ts, dict)
+_ADJ_CACHE = {}     # name -> DataFrame（东财前复权主连，进程内复用）
 _CACHE_TTL = 90     # 秒
 
 
@@ -166,6 +167,46 @@ def get_daily(code, bars=None, tries=3):
         df = df.tail(bars).reset_index(drop=True)
     _DAILY_CACHE[code] = (time.time(), df)
     return df
+
+
+def get_daily_adj(name, bars=None):
+    """前复权主力连续日线（东方财富，与同花顺口径一致）。
+
+    用于趋势评分：东财主连带 fqt=1 前复权，换月跳空已抹平，
+    算出来的 EMA / DMI / 强力指标 / HPI 与同花顺逐项一致。
+    取不到时返回 None，调用方回退到 get_daily()。
+    """
+    if not name:
+        return None
+    if name in _ADJ_CACHE:
+        return _ADJ_CACHE[name]
+    bars = bars or cfg.DAILY_BARS
+    symbol = cfg.EM_ALIAS.get(name, name) + "主连"
+    try:
+        import akshare as ak
+        raw = ak.futures_hist_em(symbol=symbol, period="daily",
+                                 start_date="20220101", end_date="20500101")
+        if raw is None or raw.empty:
+            raise ValueError("返回空数据")
+        df = raw.rename(columns={
+            "时间": "date", "开盘": "open", "最高": "high", "最低": "low",
+            "收盘": "close", "成交量": "volume", "持仓量": "oi",
+        })
+        keep = [c for c in ("date", "open", "high", "low", "close", "volume", "oi") if c in df.columns]
+        df = df[keep].copy()
+        df["date"] = pd.to_datetime(df["date"])
+        for c in ("open", "high", "low", "close", "volume", "oi"):
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = (df.dropna(subset=["close"]).sort_values("date")
+                .drop_duplicates("date").reset_index(drop=True))
+        if len(df) > bars:
+            df = df.tail(bars).reset_index(drop=True)
+        _ADJ_CACHE[name] = df
+        return df
+    except Exception as e:
+        logger.warning(f"{name} 东财前复权数据获取失败（回退新浪连续）：{e}")
+        return None
 
 
 def latest_settle(df, target_date=None):
