@@ -9,7 +9,7 @@
 3. 强力指标 13 期慢线             >0 +W_STRONG / <0 -W_STRONG
 4. DMI                          ADX<W_ADX_TH 记 0；ADX>阈值且上升 ±W_DMI_UP；下降 ±W_DMI_DOWN
 5. HPI                          >0 且升 +W_HPI_UP；>0 且降 +W_HPI_DOWN；
-                                <0 且升 -W_HPI_UP；<0 且降 -W_HPI_DOWN
+                                <0 且升 -W_HPI_DOWN；<0 且降 -W_HPI_UP
 """
 import logging
 
@@ -60,10 +60,11 @@ def score(f):
         s += W_DMI_DOWN if f["pdi"] > f["ndi"] else -W_DMI_DOWN
 
     # 5. HPI
+    # >0 上升 +20 / >0 下降 +10；<0 上升 -10 / <0 下降 -20
     if f["hpi"] > 0:
         s += W_HPI_UP if f["hpi_up"] else W_HPI_DOWN
     else:
-        s += -W_HPI_UP if f["hpi_up"] else -W_HPI_DOWN
+        s += -W_HPI_DOWN if f["hpi_up"] else -W_HPI_UP
 
     if abs(s) > 100:
         logger.error(f"评分越界 {s}（理论范围 ±100），请检查维度是否重复计算")
@@ -100,7 +101,7 @@ def explain(f):
         h = W_HPI_UP if f["hpi_up"] else W_HPI_DOWN
         desc = f"HPI>0（{f['hpi']:.0f}）且{'上升' if f['hpi_up'] else '下降'}"
     else:
-        h = -W_HPI_UP if f["hpi_up"] else -W_HPI_DOWN
+        h = -W_HPI_DOWN if f["hpi_up"] else -W_HPI_UP
         desc = f"HPI<0（{f['hpi']:.0f}）且{'上升' if f['hpi_up'] else '下降'}"
     items.append(("HPI", desc, h))
 

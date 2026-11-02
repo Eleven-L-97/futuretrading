@@ -19,6 +19,7 @@ import argparse
 import logging
 import logging.handlers
 import os
+import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +36,9 @@ from feishu import Feishu, FeishuError, as_ms, as_num, as_text, ms_to_day, now_m
 from position import sync as sync_positions
 import daily_snapshot
 import performance
+
+# 有些数据源（akshare/新浪）内部请求没设超时，偶发网络卡住会把任务拖到超时被杀
+socket.setdefaulttimeout(20)
 
 M = cfg.MONITOR_FIELDS
 H = cfg.HIST_FIELDS
@@ -116,12 +120,14 @@ def _daily_with_spot(daily, quote):
 
 def realtime(fs, dry_run=False, limit=None, force_history=False):
     """日内一批：抓行情 -> 算分 -> 写监控表 -> 每 15 分钟追加历史（双表 + CSV）。"""
+    logger.info("读取监控表…")
     rows = fs.read("monitor")
     if not rows:
         logger.warning("监控表为空")
         return 0
     if limit:
         rows = rows[:limit]
+    logger.info(f"监控表 {len(rows)} 条，开始抓行情")
 
     def fetch(row):
         code = as_text(row.get(M["code"]))
@@ -129,6 +135,7 @@ def realtime(fs, dry_run=False, limit=None, force_history=False):
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         fetched = list(pool.map(fetch, rows))
+    logger.info(f"行情抓取完成 {len(fetched)} 条")
 
     ts_now = now_ms()
     today = local_today()

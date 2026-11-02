@@ -1,20 +1,11 @@
 name: 日内盯盘
 
-# 触发方式：
-#   1) 外部定时器（Cloudflare Worker）通过 repository_dispatch：{"event_type":"realtime-tick"}
-#   2) 兜底：GitHub 自带 schedule（外部定时器失效时仍能跑，代价是延迟较大）
-# 交易时段：北京 09:00-11:30 / 13:30-15:00 / 21:00-23:00 -> UTC 01:00-03:30 / 05:30-07:00 / 13:00-15:00
+# 触发方式：Cloudflare Worker 每 5 分钟 repository_dispatch 一次。
+# 注意：不要同时开 GitHub schedule，两边同分钟触发会互相挤掉（排队中的那条会被取消），
+#       并让飞书接口承受双倍请求。需要临时停用 Worker 时，手动跑一次即可。
 on:
   repository_dispatch:
     types: [realtime-tick]
-  schedule:
-    - cron: '*/5 1-2 * * 1-5'                  # 09:00-10:55
-    - cron: '0,5,10,15,20,25,30 3 * * 1-5'     # 11:00-11:30
-    - cron: '30,35,40,45,50,55 5 * * 1-5'      # 13:30-13:55
-    - cron: '*/5 6 * * 1-5'                    # 14:00-14:55
-    - cron: '0 7 * * 1-5'                      # 15:00 收盘
-    - cron: '*/5 13-14 * * 1-5'                # 21:00-22:55
-    - cron: '0 15 * * 1-5'                     # 23:00 夜盘收盘
   workflow_dispatch:
     inputs:
       force_history:
@@ -32,7 +23,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       TZ: Asia/Shanghai
       FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
@@ -53,7 +44,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: 运行实时盯盘
-        run: python main.py --mode realtime ${{ inputs.force_history && '--force-history' || '' }}
+        run: python -u main.py --mode realtime ${{ inputs.force_history && '--force-history' || '' }}
 
       - name: 提交历史 CSV
         run: |
