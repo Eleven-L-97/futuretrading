@@ -75,13 +75,34 @@ def validate_journal(rows, require_open_px=None):
 def run(fs, dry_run=False, today=None):
     day = pd.Timestamp(today or local_today()).normalize()
 
-    # 先补算之前因结算价未出而空着的快照
-    if not dry_run:
-        for d in _pending_dates(fs, day):
-            logger.info(f"补算 {d.date()} 的快照")
-            _compute(fs, d, dry_run, is_today=False)
+    # 滚动重算：交易日志随时可能补录/修改，只算当天会让「盯市」基于过时的前一日权益，
+    # 与「逐笔」越差越远。这里把最近几天按时间顺序重算一遍。
+    start = day - pd.Timedelta(days=cfg.SNAPSHOT_REBUILD_DAYS)
+    days = {day}
+    for r in journal_rows(fs):
+        if start <= r["_date"] <= day:
+            days.add(r["_date"])
+    result = None
+    for d in sorted(days):
+        result = _compute(fs, d, dry_run, is_today=(d == day))
 
-    return _compute(fs, day, dry_run, is_today=True)
+    # 清掉未来日期的快照（错误补算留下的）
+    if today is None and not dry_run:
+        _drop_future(fs, day)
+    return result
+
+
+def _drop_future(fs, day):
+    """删除快照日期晚于今天的行（--date 误操作或补算留下的脏数据）。"""
+    try:
+        rows = fs.read("snapshot")
+    except Exception:
+        return
+    ids = [r["_id"] for r in rows
+           if (d := _snap_date(r)) is not None and d > day and r.get("_id")]
+    if ids:
+        fs.batch_delete(cfg.TABLES["snapshot"], ids)
+        logger.warning(f"清理未来日期的快照 {len(ids)} 条")
 
 
 def _pending_dates(fs, day, max_days=5):

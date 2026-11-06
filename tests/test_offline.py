@@ -249,8 +249,10 @@ class TestSnapshot(unittest.TestCase):
         })
         self.assertIsNone(daily_snapshot.run(fs, today=pd.Timestamp("2026-10-22")))
         snaps = fs.read("snapshot")
-        self.assertEqual(len(snaps), 1)
-        self.assertIsNone(snaps[0].get(cfg.SNAP_FIELDS["equity"]))
+        # 滚动重算：10-21 正常算一条，10-22 结算价未出只写占位
+        self.assertEqual(len(snaps), 2)
+        placeholders = [s for s in snaps if s.get(cfg.SNAP_FIELDS["equity"]) is None]
+        self.assertEqual(len(placeholders), 1)
 
     def test_close_exceeding_yesterday_qty(self):
         """当天先加仓再平掉（平仓量 > 昨仓）时，盯市不能重复计算。"""
